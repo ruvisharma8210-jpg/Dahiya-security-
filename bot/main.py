@@ -16,6 +16,7 @@ from . import handlers as h
 from . import sessions as ss
 from .config import BOT_TOKEN, DB_PATH, OWNER_IDS
 from .db import DB
+from . import keepalive
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -76,6 +77,7 @@ def main():
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & ~filters.StatusUpdate.ALL, h.moderate), group=1)
     app.add_error_handler(h.on_error)
 
+    keepalive.start()
     logging.info("Bot starting…")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 

@@ -57,6 +57,14 @@ nohup python run.py > bot.log 2>&1 &
 ```
 ya `systemd` / `pm2 start run.py --interpreter python3` use karein.
 
+## ☁️ Render FREE (Web Service)
+Bot me chhota built-in web server hai (Flask nahi chahiye) — Render jo `PORT` deta hai us par `OK` dikhata hai.
+1. New + → **Web Service** → ye repo → Free plan
+2. Build: `pip install -r requirements.txt` · Start: `python run.py`
+3. Environment variables daaliye (BOT_TOKEN, OWNER_IDS, API_ID, API_HASH, SESSION_SECRET)
+4. Free service 15 min baad so jaati hai — https://uptimerobot.com par apna `https://<app>.onrender.com` URL har 5 min ping karwaiye.
+> Free plan me disk nahi hoti: redeploy/restart par settings aur sessions reset ho sakte hain.
+
 ## 📁 Files
 ```
 run.py              # start
