@@ -73,7 +73,8 @@ def start_menu(user_id: int, bot_username: str):
         "Neeche buttons se sab kuch kijiye:\n"
         "• <b>➕ Add to Group</b> — mujhe group me add karke admin banaiye\n"
         "• <b>⚙️ Group Settings</b> — Welcome, Auto-Approve, Security sab yahin se\n"
-        "• <b>🔑 Session String</b> — apni Telethon / mtcute / Kurigram / GramJS / GoTG string nikaalein\n\n"
+        "• <b>🔑 Session String</b> — apni Telethon / mtcute / Kurigram / GramJS / GoTG string nikaalein\n"
+        "• <b>♻️ Revoke</b> — purani string band karke nayi lijiye\n\n"
         f"Aapki Telegram ID: <code>{user_id}</code>"
     )
     kb = [
@@ -82,6 +83,7 @@ def start_menu(user_id: int, bot_username: str):
         [InlineKeyboardButton("👋 Welcome Message", callback_data="g:list:welcome"),
          InlineKeyboardButton("✅ Auto-Approve", callback_data="g:list:approve")],
         [InlineKeyboardButton("🔑 Session String Generator", callback_data="sg:home")],
+        [InlineKeyboardButton("♻️ Revoke Session String", callback_data="sr:start")],
     ]
     if user_id in OWNER_IDS:
         kb.append([InlineKeyboardButton("📂 Saved Sessions Manager (owner)", callback_data="ss:home")])
@@ -168,6 +170,9 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_text("❌ Cancelled.")
             return
         if await cancel_flow(update, context):
+            return
+        from .sessrevoke import cancel_flow as cancel_revoke
+        if await cancel_revoke(update, context):
             return
         await cancel_private(update, context)
         return

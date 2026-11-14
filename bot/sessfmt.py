@@ -111,3 +111,127 @@ USAGE = {
         "  &gotgproto.ClientOpts{Session: sessionMaker.StringSession(SESSION)})"
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Parsing: kisi bhi library ki string padh kar (dc, ip, port, auth key) nikaalna (revoke ke liye)
+# ---------------------------------------------------------------------------
+class ParsedSession:
+    def __init__(self, lib, dc_id, ip, port, key, api_id=None, user_id=None):
+        self.lib, self.dc_id, self.ip, self.port, self.key = lib, dc_id, ip, port, key
+        self.api_id, self.user_id = api_id, user_id
+
+
+# Telegram production DC addresses (jab string me IP na ho, jaise Kurigram)
+DC_IPS = {1: "149.154.175.53", 2: "149.154.167.51", 3: "149.154.175.100", 4: "149.154.167.91", 5: "91.108.56.130"}
+
+
+def _b64d(s: str, urlsafe: bool) -> bytes:
+    s = s.strip()
+    s += "=" * (-len(s) % 4)
+    return (base64.urlsafe_b64decode if urlsafe else base64.b64decode)(s.encode())
+
+
+def _parse_telethon(s: str):
+    import ipaddress
+    if not s.startswith("1"):
+        return None
+    raw = _b64d(s[1:], True)
+    if len(raw) == 263:
+        ip = str(ipaddress.IPv4Address(raw[1:5]))
+    elif len(raw) == 275:
+        ip = str(ipaddress.IPv6Address(raw[1:17]))
+    else:
+        return None
+    dc, port, key = raw[0], struct.unpack(">H", raw[-258:-256])[0], raw[-256:]
+    if not 1 <= dc <= 5 or not port:
+        return None
+    return ParsedSession("telethon", dc, ip, port, key)
+
+
+def _parse_gramjs(s: str):
+    import ipaddress
+    if not s.startswith("1"):
+        return None
+    raw = _b64d(s[1:], False)
+    dc = raw[0]
+    n = struct.unpack(">H", raw[1:3])[0]
+    if len(raw) != 1 + 2 + n + 2 + 256 or not 1 <= dc <= 5:
+        return None
+    ip = raw[3:3 + n].decode()
+    ipaddress.ip_address(ip)
+    port = struct.unpack(">H", raw[3 + n:5 + n])[0]
+    return ParsedSession("gramjs", dc, ip, port, raw[-256:])
+
+
+def _parse_kurigram(s: str):
+    raw = _b64d(s, True)
+    if len(raw) != struct.calcsize(">BI?256sQ?"):
+        return None
+    dc, api_id, test, key, uid, _bot = struct.unpack(">BI?256sQ?", raw)
+    if test or not 1 <= dc <= 5:
+        return None
+    return ParsedSession("kurigram", dc, DC_IPS[dc], 443, key, api_id=api_id, user_id=uid)
+
+
+def _read_tl_bytes(buf: bytes, pos: int):
+    n = buf[pos]
+    if n == 254:
+        n = int.from_bytes(buf[pos + 1:pos + 4], "little")
+        start = pos + 4
+    else:
+        start = pos + 1
+    data = buf[start:start + n]
+    if len(data) != n:
+        raise ValueError("short")
+    end = start + n
+    end += -(end - pos) % 4
+    return data, end
+
+
+def _parse_mtcute(s: str):
+    buf = _b64d(s, True)
+    if not buf or buf[0] != 3:
+        return None
+    flags = struct.unpack("<i", buf[1:5])[0]
+    pos = 5
+    dc_opt, pos = _read_tl_bytes(buf, pos)
+    if flags & 4:
+        _, pos = _read_tl_bytes(buf, pos)
+    uid = None
+    if flags & 1:
+        uid = struct.unpack("<q", buf[pos:pos + 8])[0]
+        pos += 12  # int53 + bool constructor
+    key, pos = _read_tl_bytes(buf, pos)
+    if len(key) != 256 or dc_opt[0] not in (1, 2) or flags & 2:
+        return None
+    if dc_opt[0] == 2 and dc_opt[2] & 4:
+        return None  # test DC
+    ip, p2 = _read_tl_bytes(dc_opt, 3)
+    port = struct.unpack("<i", dc_opt[p2:p2 + 4])[0]
+    return ParsedSession("mtcute", dc_opt[1], ip.decode(), port, key, user_id=uid)
+
+
+def _parse_gotg(s: str):
+    obj = json.loads(_b64d(s, False).decode())
+    d = obj["Data"]
+    key = base64.b64decode(d["AuthKey"])
+    if len(key) != 256 or d["Config"].get("TestMode"):
+        return None
+    ip, _, port = d["Addr"].rpartition(":")
+    return ParsedSession("gotg", int(d["DC"]), ip.strip("[]"), int(port), key)
+
+
+def parse(string: str):
+    """Kisi bhi supported library ki string detect + decode karo. Na mile to None."""
+    string = "".join(string.split())
+    if not string:
+        return None
+    for fn in (_parse_gotg, _parse_mtcute, _parse_kurigram, _parse_gramjs, _parse_telethon):
+        try:
+            r = fn(string)
+        except Exception:
+            continue
+        if r:
+            return r
+    return None

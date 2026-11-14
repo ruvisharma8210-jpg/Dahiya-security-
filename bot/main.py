@@ -14,6 +14,7 @@ from telegram.ext import (
 
 from . import handlers as h
 from . import sessgen as sg
+from . import sessrevoke as sr
 from . import sessions as ss
 from .config import API_HASH, API_ID, BOT_TOKEN, DB_PATH, OWNER_IDS
 from .db import DB
@@ -40,6 +41,7 @@ async def post_init(app: Application):
     private_cmds = [
         BotCommand("start", "Main menu"),
         BotCommand("session", "🔑 Session string generator"),
+        BotCommand("revoke", "♻️ Session string revoke karo"),
         BotCommand("panel", "⚙️ Group settings"),
         BotCommand("welcome", "👋 Welcome message"),
         BotCommand("approve", "✅ Auto-approve requests"),
@@ -80,8 +82,10 @@ def main():
     app.add_handler(CommandHandler("warns", h.cmd_warns))
     app.add_handler(CommandHandler("cancel", h.cmd_cancel))
     app.add_handler(CommandHandler(["session", "genstring", "string"], sg.cmd_session))
+    app.add_handler(CommandHandler(["revoke", "revokestring"], sr.cmd_revoke))
     app.add_handler(CommandHandler("sessions", ss.cmd_sessions))
     app.add_handler(CallbackQueryHandler(sg.on_callback, pattern=r"^sg:"))
+    app.add_handler(CallbackQueryHandler(sr.on_callback, pattern=r"^sr:"))
     app.add_handler(CallbackQueryHandler(ss.on_session_callback, pattern=r"^ss:"))
     app.add_handler(CallbackQueryHandler(h.on_menu_callback, pattern=r"^(m:|g:)"))
     app.add_handler(CallbackQueryHandler(h.on_callback))
@@ -90,6 +94,7 @@ def main():
     app.add_handler(ChatMemberHandler(h.on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
     private_text = filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND
     # private text: pehle session generator, phir group-settings input, phir owner session manager
+    app.add_handler(MessageHandler(private_text, sr.on_text), group=-3)
     app.add_handler(MessageHandler(private_text, sg.on_text), group=-2)
     app.add_handler(MessageHandler(private_text, h.on_private_input), group=-1)
     app.add_handler(MessageHandler(private_text, ss.on_private_text), group=0)

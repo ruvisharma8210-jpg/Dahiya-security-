@@ -74,6 +74,9 @@ bot/panels.py       # saare button panels
 bot/db.py           # SQLite storage
 bot/utils.py        # mute/ban/duration helpers
 bot/sessions.py     # Telethon Sessions Manager
+bot/sessgen.py      # public session string generator
+bot/sessrevoke.py   # public session string revoke
+bot/sessfmt.py      # string formats (build + parse)
 gen_session.py      # session string generator (local)
 ```
 
@@ -88,3 +91,8 @@ String sirf us chat me milti hai — bot kuch save nahi karta, environment me ku
 - **👋 Welcome Message**: on/off, text edit, preview, reset, auto-delete (1m/5m/10m), purana welcome hatao.
 - **✅ Auto-Approve**: on/off, delay (instant/10s/30s/1m), approve hone par DM + DM text, approved count.
 - `/id` — apni Telegram ID dekhein (OWNER_IDS ke liye).
+
+## ♻️ Session String Revoke + Nayi String (sab users ke liye)
+Bot ke private chat me `/start` → **♻️ Revoke Session String** (ya `/revoke`).
+Purani string paste kijiye (Telethon / mtcute / Kurigram / GramJS / GoTG — library apne aap pehchani jaati hai) → **🗑 Haan, revoke karo**.
+Bot Telegram par us string ka logout kar deta hai, string hamesha ke liye band ho jaati hai, aur wahin library buttons aate hain taaki turant **nayi string** le sakein.

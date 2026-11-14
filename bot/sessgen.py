@@ -52,6 +52,7 @@ def home_panel():
         [B("🐍 Telethon", callback_data="sg:lib:telethon"), B("🔥 Kurigram", callback_data="sg:lib:kurigram")],
         [B("📦 mtcute", callback_data="sg:lib:mtcute"), B("🟨 GramJS", callback_data="sg:lib:gramjs")],
         [B("🐹 GoTG", callback_data="sg:lib:gotg")],
+        [B("♻️ Purani string Revoke karo", callback_data="sr:start")],
         [B("« Menu", callback_data="m:home")],
     ]
     return text, _kb(kb)
@@ -62,6 +63,7 @@ def _state(context) -> dict | None:
 
 
 async def _cleanup(context, st: dict | None = None):
+    context.user_data.pop("sr", None)
     st = st or context.user_data.pop(KEY, None)
     context.user_data.pop(KEY, None)
     if not st:
@@ -365,10 +367,14 @@ async def _finish(context, st: dict, chat_id: int):
         f"<code>{html.escape(string)}</code>\n\n"
         "👆 Tap karke copy karein.\n"
         "🚨 <b>Ye string kisi ko mat dijiye</b> — isse aapka account poora control ho sakta hai. "
-        "Kabhi leak ho to Telegram → Settings → Devices me jaakar “Session Generator” device terminate kar dein."
+        "Kabhi leak ho to /revoke se band karke nayi string le lijiye."
         f"{extra}\n\n<b>Use:</b>\n<pre>{usage}</pre>",
         parse_mode=ParseMode.HTML,
-        reply_markup=_kb([[B("🔑 Dusri library ki string", callback_data="sg:home")], [B("« Menu", callback_data="m:home")]]),
+        reply_markup=_kb([
+            [B("🔑 Dusri library ki string", callback_data="sg:home")],
+            [B("♻️ Koi string Revoke karo", callback_data="sr:start")],
+            [B("« Menu", callback_data="m:home")],
+        ]),
     )
 
 
