@@ -1,3 +1,4 @@
+import asyncio
 import html
 import logging
 import re
@@ -17,7 +18,7 @@ from telegram.constants import ChatType, MessageEntityType, ParseMode
 from telegram.error import BadRequest, Forbidden, TelegramError
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
-from .db import DEFAULT_WELCOME, DB
+from .db import DEFAULT_APPROVE_DM, DEFAULT_WELCOME, DB
 from .panels import build, final_label
 from .utils import (
     ANON_ADMIN_ID,
@@ -61,48 +62,113 @@ async def require_group_admin(update: Update, context) -> bool:
 
 
 # ------------------------------------------------------------------ commands
+def start_menu(user_id: int, bot_username: str):
+    from .config import OWNER_IDS
+    url = (
+        f"https://t.me/{bot_username}?startgroup=true"
+        "&admin=delete_messages+restrict_members+invite_users+pin_messages+manage_chat"
+    )
+    text = (
+        "<b>👋 Group Guard Bot</b>\n\n"
+        "Neeche buttons se sab kuch kijiye:\n"
+        "• <b>➕ Add to Group</b> — mujhe group me add karke admin banaiye\n"
+        "• <b>⚙️ Group Settings</b> — Welcome, Auto-Approve, Security sab yahin se\n"
+        "• <b>🔑 Session String</b> — apni Telethon / mtcute / Kurigram / GramJS / GoTG string nikaalein\n\n"
+        f"Aapki Telegram ID: <code>{user_id}</code>"
+    )
+    kb = [
+        [InlineKeyboardButton("➕ Add to Group", url=url)],
+        [InlineKeyboardButton("⚙️ Group Settings", callback_data="g:list:main")],
+        [InlineKeyboardButton("👋 Welcome Message", callback_data="g:list:welcome"),
+         InlineKeyboardButton("✅ Auto-Approve", callback_data="g:list:approve")],
+        [InlineKeyboardButton("🔑 Session String Generator", callback_data="sg:home")],
+    ]
+    if user_id in OWNER_IDS:
+        kb.append([InlineKeyboardButton("📂 Saved Sessions Manager (owner)", callback_data="ss:home")])
+    return text, InlineKeyboardMarkup(kb)
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type in GROUPS:
+        db_of(context).remember_chat(update.effective_chat.id, update.effective_chat.title)
         await update.effective_message.reply_text("✅ Bot active hai. Admins /panel use karein.")
         return
     me = await context.bot.get_me()
-    url = (
-        f"https://t.me/{me.username}?startgroup=true"
-        "&admin=delete_messages+restrict_members+invite_users+pin_messages+manage_chat"
-    )
+    text, kb = start_menu(update.effective_user.id, me.username)
+    await update.effective_message.reply_html(text, reply_markup=kb)
+
+
+async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from .config import OWNER_IDS
+    u = update.effective_user
+    is_owner = "✅ haan" if u.id in OWNER_IDS else "❌ nahi"
     await update.effective_message.reply_html(
-        "<b>👋 Group Guard Bot</b>\n\n"
-        "Mujhe apne group me add karein aur <b>admin</b> banaiye (Delete, Ban/Restrict, Invite users).\n\n"
-        "<b>Commands (group me):</b>\n"
-        "/panel – full control panel\n"
-        "/welcome – auto-accept & welcome settings\n"
-        "/secpanel – security & moderation\n"
-        "/punish – punishment durations\n"
-        "/lockdown · /unlock – emergency lock\n"
-        "/warn · /unwarn · /warns – reply karke\n"
-        "/cancel – text input cancel\n\n"
-        "<b>Owner (private chat):</b>\n/sessions – 📂 Telethon Sessions Manager",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add to Group", url=url)]]),
+        f"🆔 Aapki ID: <code>{u.id}</code>\nChat ID: <code>{update.effective_chat.id}</code>\n"
+        f"Bot ko owner IDs mili: <b>{len(OWNER_IDS)}</b> · Aap owner ho: {is_owner}"
     )
+
+
+async def admin_groups(context, user_id: int) -> list[tuple[int, str]]:
+    """Wo groups jahan bot hai aur user admin hai."""
+    out = []
+    db = db_of(context)
+    for cid, title in db.chats():
+        try:
+            if await is_admin(context.bot, cid, user_id):
+                out.append((cid, title))
+        except TelegramError:
+            continue
+    return out
+
+
+async def group_picker(context, user_id: int, panel: str):
+    groups = await admin_groups(context, user_id)
+    if not groups:
+        text = (
+            "<b>⚙️ Group Settings</b>\n\n"
+            "<i>Mujhe aapka koi group nahi mila jahan aap admin ho.</i>\n\n"
+            "1. ➕ Add to Group se mujhe group me add karein aur admin banaiye\n"
+            "2. Group me ek baar <code>/start</code> ya <code>/panel</code> bhejiye\n"
+            "3. Phir yahan wapas aaiye"
+        )
+        kb = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"g:list:{panel}")],
+              [InlineKeyboardButton("« Menu", callback_data="m:home")]]
+        return text, InlineKeyboardMarkup(kb)
+    kb = [[InlineKeyboardButton(f"👥 {title or cid}"[:60], callback_data=f"g:sel:{panel}:{cid}")]
+          for cid, title in groups[:40]]
+    kb.append([InlineKeyboardButton("« Menu", callback_data="m:home")])
+    return "<b>⚙️ Kaunsa group manage karna hai?</b>", InlineKeyboardMarkup(kb)
 
 
 async def _open(update: Update, context, panel: str):
+    chat = update.effective_chat
+    if chat.type == ChatType.PRIVATE:
+        text, kb = await group_picker(context, update.effective_user.id, panel)
+        await update.effective_message.reply_html(text, reply_markup=kb)
+        return
     if not await require_group_admin(update, context):
         return
-    chat = update.effective_chat
+    db_of(context).remember_chat(chat.id, chat.title)
     text, kb = build(panel, db_of(context), chat.id, chat.title)
     await update.effective_message.reply_html(text, reply_markup=kb)
 
 
 async def cmd_panel(update, context): await _open(update, context, "main")
 async def cmd_welcome(update, context): await _open(update, context, "welcome")
+async def cmd_approve(update, context): await _open(update, context, "approve")
 async def cmd_secpanel(update, context): await _open(update, context, "sec")
 async def cmd_punish(update, context): await _open(update, context, "punish")
 
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == ChatType.PRIVATE:
+        from .sessgen import cancel_flow
         from .sessions import cancel_private
+        if context.user_data.pop("awaiting", None):
+            await update.effective_message.reply_text("❌ Cancelled.")
+            return
+        if await cancel_flow(update, context):
+            return
         await cancel_private(update, context)
         return
     aw = context.chat_data.get("awaiting")
@@ -216,17 +282,62 @@ async def warn_user(context, chat, user, reason: str):
 
 
 # ------------------------------------------------------------------ callbacks
+class _ChatRef:
+    """Private chat se group manage karte waqt group ki id/title."""
+    def __init__(self, cid: int, title: str):
+        self.id, self.title = cid, title
+
+
+async def on_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """m:home (private menu) aur g:list / g:sel (group picker)."""
+    q = update.callback_query
+    data = q.data or ""
+    if q.message is None or q.message.chat.type != ChatType.PRIVATE:
+        await q.answer()
+        return
+    parts = data.split(":")
+    if parts[0] == "m":
+        await q.answer()
+        me = await context.bot.get_me()
+        text, kb = start_menu(q.from_user.id, me.username)
+    elif parts[1] == "list":
+        await q.answer("⏳")
+        text, kb = await group_picker(context, q.from_user.id, parts[2])
+    else:  # g:sel:<panel>:<cid>
+        panel, cid = parts[2], int(parts[3])
+        if not await is_admin(context.bot, cid, q.from_user.id):
+            await q.answer("⛔ Aap is group me admin nahi ho", show_alert=True)
+            return
+        title = dict(db_of(context).chats()).get(cid, str(cid))
+        context.user_data["target"] = (cid, title)
+        await q.answer()
+        text, kb = build(panel, db_of(context), cid, title)
+        kb = InlineKeyboardMarkup(list(kb.inline_keyboard) + [[InlineKeyboardButton("🔁 Group badlo", callback_data=f"g:list:{panel}")]])
+    try:
+        await q.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    except BadRequest as e:
+        if "not modified" not in str(e).lower():
+            await q.message.reply_html(text, reply_markup=kb)
+
+
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     data = q.data or ""
     msg = q.message
-    if msg is None or msg.chat.type not in GROUPS:
-        await q.answer("Ye panel group me use karein.")
+    if msg is None:
+        await q.answer()
         return
-    chat = msg.chat
     if data == "noop":
         await q.answer()
         return
+    if msg.chat.type in GROUPS:
+        chat = _ChatRef(msg.chat.id, msg.chat.title)
+    else:
+        t = context.user_data.get("target")
+        if not t:
+            await q.answer("Pehle group chuniye: /panel", show_alert=True)
+            return
+        chat = _ChatRef(*t)
     if not await is_admin(context.bot, chat.id, q.from_user.id):
         await q.answer("⛔ Sirf admins ke liye", show_alert=True)
         return
@@ -240,30 +351,33 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kind, _, rest = data.partition(":")
     if kind == "p":
         await q.answer()
-        await refresh(msg, db, rest)
+        await refresh(msg, db, rest, chat)
     elif kind == "t":
         panel, path = rest.split(":", 1)
         val = db.toggle(chat.id, path)
         await q.answer("🟢 ON" if val else "🔴 OFF")
-        await refresh(msg, db, panel)
+        await refresh(msg, db, panel, chat)
     elif kind == "s":
         panel, path, raw = rest.split(":", 2)
         value = int(raw) if raw.lstrip("-").isdigit() else raw
         db.set(chat.id, path, value)
         await q.answer("✅ Saved")
-        await refresh(msg, db, panel)
+        await refresh(msg, db, panel, chat)
     elif kind == "i":
         panel, what = rest.split(":", 1)
-        await ask_input(q, context, panel, what)
+        await ask_input(q, context, panel, what, chat)
     elif kind == "a":
         panel, action = rest.split(":", 1)
-        await run_action(q, context, panel, action)
+        await run_action(q, context, panel, action, chat)
     else:
         await q.answer()
 
 
-async def refresh(msg: Message, db: DB, panel: str):
-    text, kb = build(panel, db, msg.chat.id, msg.chat.title)
+async def refresh(msg: Message, db: DB, panel: str, chat=None):
+    chat = chat or msg.chat
+    text, kb = build(panel, db, chat.id, chat.title)
+    if msg.chat.type == ChatType.PRIVATE:
+        kb = InlineKeyboardMarkup(list(kb.inline_keyboard) + [[InlineKeyboardButton("🔁 Group badlo", callback_data=f"g:list:{panel}")]])
     try:
         await msg.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except BadRequest as e:
@@ -275,6 +389,8 @@ PROMPTS = {
     "welcome": "✏️ Naya welcome message bhejiye.\nPlaceholders: <code>{name}</code> <code>{first_name}</code> "
                "<code>{username}</code> <code>{id}</code> <code>{mention}</code> <code>{group}</code>\n"
                "Example: <code>Welcome {name}, your ID is {id}</code>",
+    "approve_dm": "✏️ Approve hone par user ko jaane wala DM text bhejiye.\nPlaceholders: <code>{name}</code> "
+                  "<code>{first_name}</code> <code>{username}</code> <code>{id}</code> <code>{mention}</code> <code>{group}</code>",
     "add_word": "➕ Ban karne wale word(s) bhejiye (comma ya new line se alag).",
     "rm_word": "🗑️ Hatane wale word(s) bhejiye (comma ya new line se alag).",
     "add_domain": "➕ Trusted domain bhejiye, jaise <code>youtube.com</code> ya <code>t.me/yourchannel</code>",
@@ -284,21 +400,25 @@ PROMPTS = {
 }
 
 
-async def ask_input(q, context, panel: str, what: str):
+async def ask_input(q, context, panel: str, what: str, chat):
     await q.answer()
-    context.chat_data["awaiting"] = {
-        "uid": q.from_user.id, "kind": what, "panel": panel,
-        "panel_msg": q.message.message_id, "ts": time.time(),
+    aw = {
+        "uid": q.from_user.id, "kind": what, "panel": panel, "cid": chat.id, "title": chat.title,
+        "panel_msg": q.message.message_id, "panel_chat": q.message.chat.id, "ts": time.time(),
     }
+    if q.message.chat.type == ChatType.PRIVATE:
+        context.user_data["awaiting"] = aw
+        await q.message.reply_html(f"{PROMPTS[what]}\n\n<i>/cancel se rokein</i>")
+        return
+    context.chat_data["awaiting"] = aw
     await q.message.reply_html(
         f"{mention(q.from_user)} {PROMPTS[what]}\n\n<i>Is message ko reply karein · /cancel</i>",
         reply_markup=ForceReply(selective=True),
     )
 
 
-async def run_action(q, context, panel: str, action: str):
+async def run_action(q, context, panel: str, action: str, chat):
     db = db_of(context)
-    chat = q.message.chat
     if action == "preview":
         s = db.get(chat.id)
         await q.answer()
@@ -306,7 +426,15 @@ async def run_action(q, context, panel: str, action: str):
     elif action == "welcome_reset":
         db.set(chat.id, "welcome_text", DEFAULT_WELCOME)
         await q.answer("♻️ Reset")
-        await refresh(q.message, db, panel)
+        await refresh(q.message, db, panel, chat)
+    elif action == "approve_preview":
+        s = db.get(chat.id)
+        await q.answer()
+        await q.message.reply_html("👁️ <b>DM Preview:</b>\n\n" + render_welcome(s["approve_dm_text"], q.from_user, chat))
+    elif action == "approve_reset":
+        db.set(chat.id, "approve_dm_text", DEFAULT_APPROVE_DM)
+        await q.answer("♻️ Reset")
+        await refresh(q.message, db, panel, chat)
     elif action == "lockdown":
         on = not db.get(chat.id)["lockdown"]
         ok = await set_lockdown(context, chat.id, on)
@@ -314,7 +442,7 @@ async def run_action(q, context, panel: str, action: str):
             await q.answer("⚠️ Fail — bot ko Restrict/Ban rights dein", show_alert=True)
             return
         await q.answer("🔒 Group LOCKED" if on else "🔓 Group UNLOCKED", show_alert=True)
-        await refresh(q.message, db, panel)
+        await refresh(q.message, db, panel, chat)
         await context.bot.send_message(
             chat.id, "🚨 <b>LOCKDOWN ON</b> — admins ke alawa koi message nahi bhej sakta." if on
             else "🔓 <b>Lockdown OFF</b> — group normal ho gaya.", parse_mode=ParseMode.HTML)
@@ -325,7 +453,8 @@ async def run_action(q, context, panel: str, action: str):
         text = f"<b>📋 Banned words ({html.escape(chat.title or '')}) — {len(words)}</b>\n\n{body}"
         try:  # pehle admin ke DM me bhejo taaki group me words na dikhen
             await context.bot.send_message(q.from_user.id, text[:4000], parse_mode=ParseMode.HTML)
-            await q.message.reply_text("📬 List aapke DM me bhej di.")
+            if q.message.chat.type != ChatType.PRIVATE:
+                await q.message.reply_text("📬 List aapke DM me bhej di.")
         except (Forbidden, BadRequest):
             await q.message.reply_html(f"<tg-spoiler>{text[:3900]}</tg-spoiler>\n\n<i>(Bot ko DM me /start karein to list private aayegi)</i>")
     else:
@@ -336,24 +465,20 @@ async def run_action(q, context, panel: str, action: str):
 DOMAIN_RE = re.compile(r"^(?:https?://)?(?:www\.)?([a-z0-9\-._~/]+)$", re.I)
 
 
-async def on_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.effective_message
-    aw = context.chat_data.get("awaiting")
-    if not aw or not msg or not msg.from_user or msg.from_user.id != aw["uid"] or not msg.text:
-        return
-    if time.time() - aw["ts"] > 300:
-        context.chat_data.pop("awaiting", None)
-        return
-    context.chat_data.pop("awaiting", None)
+async def _apply_input(context, aw: dict, msg: Message) -> None:
     db = db_of(context)
-    chat_id = msg.chat.id
+    chat_id = aw.get("cid", msg.chat.id)
+    chat = _ChatRef(chat_id, aw.get("title") or msg.chat.title)
     text = msg.text.strip()
     kind = aw["kind"]
     items = [x.strip() for x in re.split(r"[,\n]", text) if x.strip()]
 
     if kind == "welcome":
         db.set(chat_id, "welcome_text", text[:3000])
-        reply = "✅ Welcome message update ho gaya.\n\n👁️ " + render_welcome(text[:3000], msg.from_user, msg.chat)
+        reply = "✅ Welcome message update ho gaya.\n\n👁️ " + render_welcome(text[:3000], msg.from_user, chat)
+    elif kind == "approve_dm":
+        db.set(chat_id, "approve_dm_text", text[:3000])
+        reply = "✅ DM text update ho gaya.\n\n👁️ " + render_welcome(text[:3000], msg.from_user, chat)
     elif kind == "add_word":
         added = [w for w in items if db.add_word(chat_id, w)]
         reply = f"✅ {len(added)} word(s) add hue." if added else "ℹ️ Koi naya word nahi (pehle se list me hain)."
@@ -390,13 +515,44 @@ async def on_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         reply = "OK"
 
-    await context.bot.send_message(chat_id, reply, parse_mode=ParseMode.HTML)
+    await context.bot.send_message(msg.chat.id, reply, parse_mode=ParseMode.HTML)
     # panel message ko refresh karo
-    t, kb = build(aw["panel"], db, chat_id, msg.chat.title)
+    t, kb = build(aw["panel"], db, chat_id, chat.title)
+    if msg.chat.type == ChatType.PRIVATE:
+        kb = InlineKeyboardMarkup(list(kb.inline_keyboard) + [[InlineKeyboardButton("🔁 Group badlo", callback_data=f"g:list:{aw['panel']}")]])
     try:
-        await context.bot.edit_message_text(t, chat_id, aw["panel_msg"], reply_markup=kb, parse_mode=ParseMode.HTML)
+        await context.bot.edit_message_text(t, aw.get("panel_chat", msg.chat.id), aw["panel_msg"],
+                                            reply_markup=kb, parse_mode=ParseMode.HTML)
     except TelegramError:
         pass
+
+
+async def on_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    aw = context.chat_data.get("awaiting")
+    if not aw or not msg or not msg.from_user or msg.from_user.id != aw["uid"] or not msg.text:
+        return
+    context.chat_data.pop("awaiting", None)
+    if time.time() - aw["ts"] > 300:
+        return
+    await _apply_input(context, aw, msg)
+    raise ApplicationHandlerStop
+
+
+async def on_private_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Private chat se group settings ka text input (welcome text, words, ...)."""
+    msg = update.effective_message
+    aw = context.user_data.get("awaiting")
+    if not aw or not msg or not msg.text:
+        return
+    context.user_data.pop("awaiting", None)
+    if time.time() - aw["ts"] > 300:
+        await msg.reply_text("⌛ Time khatam. Button dobara dabaiye.")
+        raise ApplicationHandlerStop
+    if not await is_admin(context.bot, aw["cid"], msg.from_user.id):
+        await msg.reply_text("⛔ Aap is group me admin nahi ho.")
+        raise ApplicationHandlerStop
+    await _apply_input(context, aw, msg)
     raise ApplicationHandlerStop
 
 
@@ -450,6 +606,10 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     db = db_of(context)
+    known = context.bot_data.setdefault("known_chats", set())
+    if chat.id not in known:
+        known.add(chat.id)
+        db.remember_chat(chat.id, chat.title)
     s = db.get(chat.id)
 
     # 1) Anti-flood
@@ -530,11 +690,7 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not was_in and now_in:
         joins[key] = time.time()
         if s["welcome_on"]:
-            try:
-                await context.bot.send_message(chat.id, render_welcome(s["welcome_text"], user, chat),
-                                               parse_mode=ParseMode.HTML)
-            except TelegramError as e:
-                log.warning("welcome failed: %s", e)
+            await send_welcome(context, chat, user, s)
     elif was_in and not now_in:
         joined_at = joins.pop(key, None)
         left_self = cmu.new_chat_member.status == ChatMember.LEFT
@@ -546,15 +702,77 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML)
 
 
+async def _delete_later(bot, chat_id: int, message_id: int, secs: int):
+    await asyncio.sleep(secs)
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except TelegramError:
+        pass
+
+
+async def send_welcome(context, chat, user, s):
+    last = context.bot_data.setdefault("last_welcome", {})
+    try:
+        m = await context.bot.send_message(chat.id, render_welcome(s["welcome_text"], user, chat),
+                                           parse_mode=ParseMode.HTML)
+    except TelegramError as e:
+        log.warning("welcome failed: %s", e)
+        return
+    if s.get("welcome_clean") and chat.id in last:
+        try:
+            await context.bot.delete_message(chat.id, last[chat.id])
+        except TelegramError:
+            pass
+    last[chat.id] = m.message_id
+    if s.get("welcome_delete"):
+        asyncio.create_task(_delete_later(context.bot, chat.id, m.message_id, int(s["welcome_delete"])))
+
+
+async def _approve(context, req, s):
+    delay = int(s.get("approve_delay") or 0)
+    if delay:
+        await asyncio.sleep(delay)
+    try:
+        await req.approve()
+    except TelegramError as e:
+        log.warning("approve failed: %s", e)
+        return
+    db = db_of(context)
+    db.set(req.chat.id, "approve_count", int(db.get(req.chat.id).get("approve_count") or 0) + 1)
+    if s.get("approve_dm"):
+        try:
+            await context.bot.send_message(req.user_chat_id or req.from_user.id,
+                                           render_welcome(s["approve_dm_text"], req.from_user, req.chat),
+                                           parse_mode=ParseMode.HTML)
+        except TelegramError:
+            pass  # user ne bot ko block kiya ho / DM band ho
+
+
 async def on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     req = update.chat_join_request
     if not req:
         return
-    if db_of(context).get(req.chat.id)["auto_accept"]:
-        try:
-            await req.approve()
-        except TelegramError as e:
-            log.warning("approve failed: %s", e)
+    db = db_of(context)
+    db.remember_chat(req.chat.id, req.chat.title)
+    s = db.get(req.chat.id)
+    if s["auto_accept"]:
+        if s.get("approve_delay"):
+            asyncio.create_task(_approve(context, req, s))
+        else:
+            await _approve(context, req, s)
+
+
+async def on_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bot kisi group/channel me add ya remove hua — list update karo."""
+    cmu = update.my_chat_member
+    if not cmu or cmu.chat.type == ChatType.PRIVATE:
+        return
+    db = db_of(context)
+    if cmu.new_chat_member.status in (ChatMember.LEFT, ChatMember.BANNED):
+        db.forget_chat(cmu.chat.id)
+        context.bot_data.setdefault("known_chats", set()).discard(cmu.chat.id)
+    else:
+        db.remember_chat(cmu.chat.id, cmu.chat.title)
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):

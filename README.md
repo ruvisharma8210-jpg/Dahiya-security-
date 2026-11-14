@@ -76,3 +76,15 @@ bot/utils.py        # mute/ban/duration helpers
 bot/sessions.py     # Telethon Sessions Manager
 gen_session.py      # session string generator (local)
 ```
+
+
+## 🔑 Session String Generator (sab users ke liye)
+Bot ke private chat me `/start` → **🔑 Session String Generator** (ya `/session`).
+Library chuniye: **Telethon, mtcute, Kurigram, GramJS, GoTG** → API ID/HASH → phone → code (spaces ke saath, jaise `1 2 3 4 5`) → 2FA password (agar ho).
+String sirf us chat me milti hai — bot kuch save nahi karta, environment me kuch daalna nahi padta.
+
+## ⚙️ Buttons se settings
+- `/start` (private) → **Group Settings / Welcome Message / Auto-Approve** buttons — group chuniye aur wahin se badliye.
+- **👋 Welcome Message**: on/off, text edit, preview, reset, auto-delete (1m/5m/10m), purana welcome hatao.
+- **✅ Auto-Approve**: on/off, delay (instant/10s/30s/1m), approve hone par DM + DM text, approved count.
+- `/id` — apni Telegram ID dekhein (OWNER_IDS ke liye).

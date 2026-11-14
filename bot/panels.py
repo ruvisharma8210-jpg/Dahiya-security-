@@ -33,33 +33,75 @@ def back(to: str) -> list:
 def main_panel(s, db, chat_id, title):
     text = (
         f"<b>⚙️ Control Panel</b>\n<i>{html.escape(title or '')}</i>\n\n"
-        f"Auto-Accept: {onoff(s['auto_accept'])}\n"
-        f"Lockdown: {onoff(s['lockdown'], '🔒 ON', '🔓 OFF')}\n\n"
+        f"👋 Welcome Message: {onoff(s['welcome_on'])}\n"
+        f"✅ Auto-Approve Requests: {onoff(s['auto_accept'])}\n"
+        f"🔒 Lockdown: {onoff(s['lockdown'], '🔒 ON', '🔓 OFF')}\n\n"
         "Section chuniye:"
     )
     kb = [
-        [B("⚙️ Welcome & Auto-Accept", callback_data="p:welcome")],
+        [B(f"👋 Welcome Message {onoff(s['welcome_on'], '🟢', '🔴')}", callback_data="p:welcome")],
+        [B(f"✅ Auto-Approve Requests {onoff(s['auto_accept'], '🟢', '🔴')}", callback_data="p:approve")],
         [B("🛡️ Security & Moderation", callback_data="p:sec")],
         [B("⏳ Punishment & Warnings", callback_data="p:punish")],
+        [B(f"🚨 Lockdown: {onoff(s['lockdown'], '🔒 ON', '🔓 OFF')}", callback_data="a:main:lockdown")],
         [B("✖️ Close", callback_data="x")],
     ]
     return text, kb
 
 
+PLACEHOLDERS = "<i>Placeholders: {name} {first_name} {username} {id} {mention} {group}</i>"
+
+
 def welcome_panel(s, db, chat_id, title):
+    wd = s["welcome_delete"]
     text = (
-        "<b>⚙️ Auto-Accept & Welcome</b>\n\n"
-        f"Auto-Accept join requests: {onoff(s['auto_accept'])}\n"
-        f"Welcome message: {onoff(s['welcome_on'])}\n\n"
+        "<b>👋 Welcome Message</b>\n\n"
+        f"Status: {onoff(s['welcome_on'], '🟢 Active', '🔴 Inactive')}\n"
+        f"Auto-delete: <b>{fmt_dur(wd) if wd else 'Off'}</b>\n"
+        f"Purana welcome hatao: {onoff(s['welcome_clean'])}\n\n"
         f"<b>Current text:</b>\n<code>{html.escape(s['welcome_text'])}</code>\n\n"
-        "<i>Placeholders: {name} {first_name} {username} {id} {mention} {group}</i>"
+        + PLACEHOLDERS
     )
     kb = [
-        [B(f"Auto-Accept: {onoff(s['auto_accept'])}", callback_data="t:welcome:auto_accept")],
-        [B(f"Welcome: {onoff(s['welcome_on'])}", callback_data="t:welcome:welcome_on")],
-        [B("✏️ Edit Welcome Text", callback_data="i:welcome:welcome"),
+        [B(f"Status: {onoff(s['welcome_on'], '🟢 Active', '🔴 Inactive')}", callback_data="t:welcome:welcome_on")],
+        [B("✏️ Edit Text", callback_data="i:welcome:welcome"),
          B("👁️ Preview", callback_data="a:welcome:preview")],
         [B("♻️ Reset to Default", callback_data="a:welcome:welcome_reset")],
+        [hdr("Auto-delete welcome after")],
+        [B(pick("Off", wd == 0), callback_data="s:welcome:welcome_delete:0"),
+         B(pick("1m", wd == 60), callback_data="s:welcome:welcome_delete:60"),
+         B(pick("5m", wd == 300), callback_data="s:welcome:welcome_delete:300"),
+         B(pick("10m", wd == 600), callback_data="s:welcome:welcome_delete:600")],
+        [B(f"🧹 Purana welcome delete: {onoff(s['welcome_clean'], '🟢', '🔴')}", callback_data="t:welcome:welcome_clean")],
+        back("main"),
+    ]
+    return text, kb
+
+
+def approve_panel(s, db, chat_id, title):
+    d = s["approve_delay"]
+    text = (
+        "<b>✅ Auto-Approve Join Requests</b>\n\n"
+        f"Status: {onoff(s['auto_accept'], '🟢 Active', '🔴 Inactive')}\n"
+        f"Delay: <b>{'Instant' if not d else (fmt_dur(d) if d >= 60 else str(d) + 's')}</b>\n"
+        f"Approve par DM: {onoff(s['approve_dm'])}\n"
+        f"Ab tak approved: <b>{s['approve_count']}</b>\n\n"
+        f"<b>DM text:</b>\n<code>{html.escape(s['approve_dm_text'])}</code>\n\n"
+        "<i>Group/channel settings me “Approve new members” on hona chahiye aur bot ke paas "
+        "“Invite users via link” admin right hona chahiye.</i>"
+    )
+    kb = [
+        [B(f"Status: {onoff(s['auto_accept'], '🟢 Active', '🔴 Inactive')}", callback_data="t:approve:auto_accept")],
+        [hdr("Approve delay")],
+        [B(pick("Instant", d == 0), callback_data="s:approve:approve_delay:0"),
+         B(pick("10s", d == 10), callback_data="s:approve:approve_delay:10"),
+         B(pick("30s", d == 30), callback_data="s:approve:approve_delay:30"),
+         B(pick("1m", d == 60), callback_data="s:approve:approve_delay:60")],
+        [hdr("Approve hone par user ko DM")],
+        [B(f"DM: {onoff(s['approve_dm'], '🟢 ON', '🔴 OFF')}", callback_data="t:approve:approve_dm")],
+        [B("✏️ Edit DM Text", callback_data="i:approve:approve_dm"),
+         B("👁️ Preview", callback_data="a:approve:approve_preview")],
+        [B("♻️ Reset DM Text", callback_data="a:approve:approve_reset")],
         back("main"),
     ]
     return text, kb
@@ -242,6 +284,7 @@ def flood_label(a: str) -> str:
 PANELS = {
     "main": main_panel,
     "welcome": welcome_panel,
+    "approve": approve_panel,
     "sec": sec_panel,
     "link": link_panel,
     "words": words_panel,

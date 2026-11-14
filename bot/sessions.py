@@ -185,6 +185,7 @@ def panel(store: SessionStore):
         [B("➕ Add New Session", callback_data="ss:add")],
         [B("🔄 Refresh / Check Status", callback_data="ss:check")],
         [B("❌ Revoke / Delete Session", callback_data="ss:pick")],
+        [B("🔑 Nayi string generate karo", callback_data="sg:home")],
         [B("✖️ Close", callback_data="ss:close")],
     ]
     return "\n".join(lines), InlineKeyboardMarkup(kb)
@@ -237,12 +238,15 @@ async def _edit(msg, text, kb):
 def _guard_reason(update: Update) -> str | None:
     if update.effective_chat.type != ChatType.PRIVATE:
         return "🔐 Session Manager sirf bot ke private chat me chalta hai."
+    uid = update.effective_user.id
     if not OWNER_IDS:
-        return "⚠️ .env me OWNER_IDS set kijiye (aapki Telegram user ID)."
-    if update.effective_user.id not in OWNER_IDS:
-        return "⛔ Ye feature sirf bot owner ke liye hai."
+        return (f"⚠️ Bot ko OWNER_IDS nahi mili. Render → Environment me OWNER_IDS = {uid} daalein, "
+                "phir Save karke redeploy karein. (Apni string nikalni hai to /session use karein — usme kuch set nahi karna.)")
+    if uid not in OWNER_IDS:
+        return (f"⛔ Ye saved-sessions manager sirf owner ke liye hai. Aapki ID {uid} OWNER_IDS me nahi hai. "
+                "Apni string nikalne ke liye /session use karein.")
     if not API_ID or not API_HASH:
-        return "⚠️ .env me API_ID aur API_HASH daaliye (my.telegram.org se)."
+        return "⚠️ Render → Environment me API_ID aur API_HASH daaliye (my.telegram.org se)."
     return None
 
 
@@ -278,7 +282,7 @@ async def on_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await q.message.reply_html(
             "➕ <b>Session string bhejiye</b> (Telethon StringSession).\n\n"
             "• Message turant delete kar diya jayega aur string encrypt hokar save hogi.\n"
-            "• String banane ke liye apne computer par <code>python gen_session.py</code> chalayein.\n\n"
+            "• String nahi hai? /session se 🔑 Session String Generator use karein.\n\n"
             "/cancel se rok sakte hain.")
     elif action == "check":
         await q.answer("🔄 Checking…")
