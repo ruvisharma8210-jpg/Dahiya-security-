@@ -78,9 +78,45 @@ bot/sessgen.py      # public session string generator
 bot/sessrevoke.py   # public session string revoke
 bot/sessfmt.py      # string formats (build + parse)
 bot/hub.py          # Dahiya Hub: String permission + activity report
+bot/owner.py        # 🎛️ Owner Control Center (/panel)
+bot/cloner.py       # 🤖 /clone — one-click clones
+bot/guard.py        # 👮 admin check + 📵 anti-screenshot
+bot/store.py        # whitelist, clones, logs storage
+bot/wiring.py       # handlers (master + clones)
 gen_session.py      # session string generator (local)
 ```
 
+
+## 🆕 v3 — A to Z Owner Features
+
+**1. 👮 Group Admin Validation** — bot group me tabhi kaam karta hai jab wo **Admin** ho.
+Admin nahi hai to command/button par turant warning: *"इस ग्रुप में काम करने के लिए कृपया मुझे पहले Admin बनाइए!"*
+(Add hote hi bhi yahi message aata hai.)
+
+**2. 📵 Anti-Screenshot & Screen-Recording Lock** — `/panel` → 🛡️ Security & Privacy → master toggle.
+ON karte hi bot ke saare groups me Telegram ka *Restrict Saving Content* lagta hai (screenshot, screen recording,
+forward, save — sab band). Naye groups me apne aap lagta hai. Telegram Bot API me ye method nahi hai, isliye
+bot Telethon se lagata hai: pehle bot account se, phir `/sessions` me saved owner accounts se.
+> Zaroori: `.env` me `API_ID` + `API_HASH`. Jo group fail ho (Telegram sirf group Owner ko allow karta hai) wo result me dikhta hai.
+
+**3. 🔑 Restricted Session String** — Generator sirf **OWNER_IDS** aur admin panel ki **whitelist** wale users ke liye
+(purana Dahiya Hub permission bhi chalta rahega). Baaki sab ko "Contact admin" + unki ID.
+
+**4. 🤖 Instant One-Click Cloner** — koi bhi user bot ke DM me: `/clone <BotFather_Token>`
+→ clone isi server par background me turant LIVE (saare features). Token wala message turant delete hota hai.
+Clone ka naam, username, token (encrypted) aur banane wale ki ID record hoti hai. Restart par saare clones apne aap chalu.
+
+**5. 🎛️ Owner Control Center** — bot ke private chat me `/panel` (sirf OWNER_IDS):
+- 📊 **Live Dashboard** — total users (24h active), requests pass/fail, join approvals, strings generated, live clones, groups
+- 🤖 **Clone Management** — list · token dekho (👁 Show) · ⏹ Stop / ▶️ Start · ✏️ Edit token · 👤 Change owner · 🗑 Delete · ➕ Add
+- 🔑 **Session Whitelist** — Telegram ID add (ek saath kai) / tap karke remove
+- 🌐 **Connected Groups** — master + clones ke saare groups · members · bot admin hai ya nahi · 🚪 Remote remove (bot leave)
+- 🛡️ **Security & Privacy** — Anti-Screenshot master toggle
+- 📜 **Activity Logs (A-Z)** — har command, clone, token change, whitelist, moderation, group add/remove; latest se purane tak pages + filters
+
+Naye files: `bot/owner.py` (panel) · `bot/cloner.py` · `bot/guard.py` · `bot/store.py` · `bot/wiring.py` (handlers, master + clones dono)
+> Clone tokens `SESSION_SECRET` / `secret.key` se encrypt hote hain — iska backup rakhein. Render free plan par disk nahi hoti,
+> isliye restart par clones/logs reset ho sakte hain — paid disk ya VPS behtar hai.
 
 ## 🛰️ Dahiya Hub (owner dashboard) — NEW
 Bot har jagah (original aur har clone) apne aap **Dahiya Hub** se juda rehta hai (`bot/hub.py`, `HUB_URL`).

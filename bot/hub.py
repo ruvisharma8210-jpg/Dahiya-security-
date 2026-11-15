@@ -71,6 +71,8 @@ def track(kind: str, chat=None, user=None, detail: str = "") -> None:
             ev["username"] = str(name)[:64]
     if len(_queue) < MAX_QUEUE:
         _queue.append(ev)
+    from . import store  # local A-Z activity log (owner panel)
+    store.log(kind, user=user, chat=chat, detail=detail)
 
 
 async def setup(app) -> None:

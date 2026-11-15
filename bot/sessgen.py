@@ -103,9 +103,15 @@ def _guard(update: Update) -> str | None:
 async def _allowed(update: Update, context) -> bool:
     """Hub se permission check. Sirf admin + admin ke diye users. Baaki ko 'Contact admin'."""
     user = update.effective_user
+    from . import store
+    from .config import OWNER_IDS
+    s = store.get()
+    if user.id in OWNER_IDS or (s is not None and s.is_whitelisted(user.id)):
+        return True  # owner / admin panel ki whitelist
     res = await hub.check_access(context.bot, user)
     if res.get("allowed"):
         return True
+    store.log("session_denied", user=user, detail="not whitelisted")
     q = update.callback_query
     if q:
         try:

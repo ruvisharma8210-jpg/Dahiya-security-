@@ -75,7 +75,8 @@ def start_menu(user_id: int, bot_username: str):
         "• <b>➕ Add to Group</b> — mujhe group me add karke admin banaiye\n"
         "• <b>⚙️ Group Settings</b> — Welcome, Auto-Approve, Security sab yahin se\n"
         "• <b>🔑 Session String</b> 🔒 — sirf admin ki permission wale users ke liye\n"
-        "• <b>♻️ Revoke</b> — purani string band karke nayi lijiye\n\n"
+        "• <b>♻️ Revoke</b> — purani string band karke nayi lijiye\n"
+        "• <b>🤖 Clone</b> — <code>/clone TOKEN</code> se apna khud ka bot\n\n"
         f"Aapki Telegram ID: <code>{user_id}</code>"
     )
     kb = [
@@ -85,8 +86,10 @@ def start_menu(user_id: int, bot_username: str):
          InlineKeyboardButton("✅ Auto-Approve", callback_data="g:list:approve")],
         [InlineKeyboardButton("🔑 Session String Generator 🔒", callback_data="sg:home")],
         [InlineKeyboardButton("♻️ Revoke Session String", callback_data="sr:start")],
+        [InlineKeyboardButton("🤖 Apna Clone Bot banao", callback_data="m:clone")],
     ]
     if user_id in OWNER_IDS:
+        kb.insert(0, [InlineKeyboardButton("🎛️ Owner Control Center", callback_data="op:home")])
         kb.append([InlineKeyboardButton("📂 Saved Sessions Manager (owner)", callback_data="ss:home")])
     return text, InlineKeyboardMarkup(kb)
 
@@ -309,7 +312,11 @@ async def on_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         return
     parts = data.split(":")
-    if parts[0] == "m":
+    if data == "m:clone":
+        from .cloner import USAGE
+        await q.answer()
+        text, kb = USAGE, InlineKeyboardMarkup([[InlineKeyboardButton("« Menu", callback_data="m:home")]])
+    elif parts[0] == "m":
         await q.answer()
         me = await context.bot.get_me()
         text, kb = start_menu(q.from_user.id, me.username)
