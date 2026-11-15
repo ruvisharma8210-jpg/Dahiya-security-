@@ -82,6 +82,21 @@ class Store:
             self.conn.execute("INSERT OR REPLACE INTO flags (key, value) VALUES (?, ?)", (key, "1" if on else "0"))
             self.conn.commit()
 
+    def get_value(self, key: str) -> str | None:
+        with self.lock:
+            row = self.conn.execute("SELECT value FROM flags WHERE key=?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def set_value(self, key: str, value: str) -> None:
+        with self.lock:
+            self.conn.execute("INSERT OR REPLACE INTO flags (key, value) VALUES (?, ?)", (key, value))
+            self.conn.commit()
+
+    def del_value(self, key: str) -> None:
+        with self.lock:
+            self.conn.execute("DELETE FROM flags WHERE key=?", (key,))
+            self.conn.commit()
+
     def incr(self, key: str, by: int = 1) -> None:
         with self.lock:
             self.conn.execute(

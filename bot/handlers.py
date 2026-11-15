@@ -63,31 +63,28 @@ async def require_group_admin(update: Update, context) -> bool:
 
 
 # ------------------------------------------------------------------ commands
-def start_menu(user_id: int, bot_username: str):
+def start_menu(user_id: int, bot_username: str, first_name: str = "", is_clone: bool = False):
+    from . import startcfg as sc
     from .config import OWNER_IDS
     url = (
         f"https://t.me/{bot_username}?startgroup=true"
         "&admin=delete_messages+restrict_members+invite_users+pin_messages+manage_chat"
     )
-    text = (
-        "<b>👋 Group Guard Bot</b>\n\n"
-        "Neeche buttons se sab kuch kijiye:\n"
-        "• <b>➕ Add to Group</b> — mujhe group me add karke admin banaiye\n"
-        "• <b>⚙️ Group Settings</b> — Welcome, Auto-Approve, Security sab yahin se\n"
-        "• <b>🔑 Session String</b> 🔒 — sirf admin ki permission wale users ke liye\n"
-        "• <b>♻️ Revoke</b> — purani string band karke nayi lijiye\n"
-        "• <b>🤖 Clone</b> — <code>/clone TOKEN</code> se apna khud ka bot\n\n"
-        f"Aapki Telegram ID: <code>{user_id}</code>"
-    )
-    kb = [
-        [InlineKeyboardButton("➕ Add to Group", url=url)],
-        [InlineKeyboardButton("⚙️ Group Settings", callback_data="g:list:main")],
-        [InlineKeyboardButton("👋 Welcome Message", callback_data="g:list:welcome"),
-         InlineKeyboardButton("✅ Auto-Approve", callback_data="g:list:approve")],
-        [InlineKeyboardButton("🔑 Session String Generator 🔒", callback_data="sg:home")],
-        [InlineKeyboardButton("♻️ Revoke Session String", callback_data="sr:start")],
-        [InlineKeyboardButton("🤖 Apna Clone Bot banao", callback_data="m:clone")],
-    ]
+    if not is_clone:  # owner ki banayi start settings sirf master bot par
+        text, hide, extra = sc.render_text(user_id, first_name), sc.hidden(), sc.buttons()
+    else:
+        text, hide, extra = sc.DEFAULT_TEXT.replace("{id}", f"<code>{user_id}</code>"), set(), []
+    rows = {
+        "add": [InlineKeyboardButton("➕ Add to Group", url=url)],
+        "settings": [InlineKeyboardButton("⚙️ Group Settings", callback_data="g:list:main")],
+        "welapp": [InlineKeyboardButton("👋 Welcome Message", callback_data="g:list:welcome"),
+                   InlineKeyboardButton("✅ Auto-Approve", callback_data="g:list:approve")],
+        "sess": [InlineKeyboardButton("🔑 Session String Generator 🔒", callback_data="sg:home")],
+        "revoke": [InlineKeyboardButton("♻️ Revoke Session String", callback_data="sr:start")],
+        "clone": [InlineKeyboardButton("🤖 Apna Clone Bot banao", callback_data="m:clone")],
+    }
+    kb = [row for key, row in rows.items() if key not in hide]
+    kb += [[InlineKeyboardButton(b["text"], url=b["url"])] for b in extra]
     if user_id in OWNER_IDS:
         kb.insert(0, [InlineKeyboardButton("🎛️ Owner Control Center", callback_data="op:home")])
         kb.append([InlineKeyboardButton("📂 Saved Sessions Manager (owner)", callback_data="ss:home")])
@@ -100,8 +97,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("✅ Bot active hai. Admins /panel use karein.")
         return
     me = await context.bot.get_me()
-    text, kb = start_menu(update.effective_user.id, me.username)
-    await update.effective_message.reply_html(text, reply_markup=kb)
+    u = update.effective_user
+    text, kb = start_menu(u.id, me.username, u.first_name or "", bool(context.bot_data.get("is_clone")))
+    try:
+        await update.effective_message.reply_html(text, reply_markup=kb)
+    except BadRequest as e:  # galat custom text/button -> default dikhao, bot chup na rahe
+        log.warning("custom /start failed, using default: %s", e)
+        text, kb = start_menu(u.id, me.username, u.first_name or "", True)
+        await update.effective_message.reply_html(text, reply_markup=kb)
 
 
 async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -319,7 +322,8 @@ async def on_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif parts[0] == "m":
         await q.answer()
         me = await context.bot.get_me()
-        text, kb = start_menu(q.from_user.id, me.username)
+        text, kb = start_menu(q.from_user.id, me.username, q.from_user.first_name or "",
+                              bool(context.bot_data.get("is_clone")))
     elif parts[1] == "list":
         await q.answer("⏳")
         text, kb = await group_picker(context, q.from_user.id, parts[2])

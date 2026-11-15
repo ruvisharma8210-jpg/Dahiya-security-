@@ -16,6 +16,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from . import cloner, guard
+from . import startcfg as sc
 from . import handlers as h
 from . import store as st
 from .config import API_HASH, API_ID, OWNER_IDS
@@ -33,6 +34,7 @@ KIND_ICON = {
     "clone_stopped": "⏹", "clone_error": "⚠️", "session_generated": "🔑", "session_denied": "⛔",
     "whitelist_add": "➕", "whitelist_remove": "➖", "moderation": "🛡️", "join_approved": "✅",
     "bot_added": "📥", "bot_removed": "📤", "group_kicked": "🚪", "admin_missing": "⚠️", "antiss": "📵",
+    "start_edit": "✏️",
 }
 FILTER_LABELS = [("all", "Sab"), ("clone", "🤖 Clones"), ("sess", "🔑 Sessions"),
                  ("mod", "🛡️ Moderation"), ("grp", "🌐 Groups"), ("cmd", "⌨️ Commands")]
@@ -86,6 +88,7 @@ def home_screen():
         [B("🌐 Connected Groups", callback_data="op:gr:0")],
         [B("🛡️ Security & Privacy", callback_data="op:sec")],
         [B("📜 Activity Logs", callback_data="op:lg:all:0")],
+        [B("✏️ /start Message & Buttons", callback_data="op:sm")],
         [B("⚙️ Group Settings", callback_data="g:list:main"), B("📂 Saved Sessions", callback_data="ss:home")],
         [B("✖️ Close", callback_data="op:close")],
     ]
@@ -272,6 +275,111 @@ def logs_screen(flt: str, page: int):
     return text, InlineKeyboardMarkup(kb)
 
 
+def start_screen():
+    btns, hide = sc.buttons(), sc.hidden()
+    text = (
+        "<b>✏️ /start Message Editor</b>\n\n"
+        f"📝 Text: <b>{'✍️ Aapka apna' if sc.is_custom_text() else '📄 Default'}</b>\n"
+        f"🔗 Aapke link buttons: <b>{len(btns)}</b>/{sc.MAX_BUTTONS}\n"
+        f"🙈 Chhupe hue built-in buttons: <b>{len(hide)}</b>\n\n"
+        "• <b>🔗 button</b> ke saamne 🗑 = delete, ⬆️ = upar\n"
+        "• Built-in buttons par tap = dikhao / chhupao\n"
+        "• 👀 Preview se dekhiye users ko kaisa dikhega"
+    )
+    kb = [
+        [B("✏️ Text badlo", callback_data="op:sm:t"), B("♻️ Default text", callback_data="op:sm:r")],
+        [B("➕ Naya button jodo", callback_data="op:sm:a")],
+    ]
+    for i, b in enumerate(btns):
+        kb.append([B(f"🔗 {b['text']}"[:40], url=b["url"]),
+                   B("⬆️", callback_data=f"op:sm:u:{i}"), B("🗑", callback_data=f"op:sm:d:{i}")])
+    kb.append([B("— Built-in buttons —", callback_data="noop")])
+    row = []
+    for key, label in sc.BUILTINS:
+        row.append(B(("🚫 " if key in hide else "✅ ") + label, callback_data=f"op:sm:h:{key}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb += [
+        [B("👀 Preview", callback_data="op:sm:p"), B("🧹 Sab reset", callback_data="op:sm:x")],
+        [B("« Control Center", callback_data="op:home")],
+    ]
+    return text, InlineKeyboardMarkup(kb)
+
+
+START_TEXT_HELP = (
+    "✏️ <b>Naya /start text bhejiye</b>\n\n"
+    "Jaisa likhoge waisa hi dikhega. <b>Bold</b>, <i>italic</i>, emoji sab chalega "
+    "(Telegram ki formatting use karo).\n"
+    "• <code>{id}</code> likhoge to wahan user ki Telegram ID aayegi\n"
+    "• <code>{name}</code> likhoge to user ka naam aayega\n\n"
+    "/cancel se wapas."
+)
+START_BTN_HELP = (
+    "➕ <b>Naya button bhejiye</b> — format:\n"
+    "<code>Button ka naam - link</code>\n\n"
+    "Example:\n"
+    "<code>📢 Mera Channel - https://t.me/mychannel</code>\n"
+    "<code>💬 Support - @myusername</code>\n\n"
+    "Ek saath kai buttons: har button nayi line me. /cancel se wapas."
+)
+
+
+async def _start_cfg(q, context, args: list[str]):
+    sub = args[0] if args else ""
+    if sub == "t":
+        _ask(context, "start_text")
+        await q.answer()
+        await q.message.reply_html(START_TEXT_HELP)
+        return
+    if sub == "a":
+        if len(sc.buttons()) >= sc.MAX_BUTTONS:
+            await q.answer(f"Maximum {sc.MAX_BUTTONS} buttons. Pehle koi delete karo.", show_alert=True)
+            return
+        _ask(context, "start_btn")
+        await q.answer()
+        await q.message.reply_html(START_BTN_HELP)
+        return
+    if sub == "p":
+        await q.answer()
+        me = await context.bot.get_me()
+        u = q.from_user
+        text, kb = h.start_menu(u.id, me.username, u.first_name or "")
+        await q.message.reply_html("👀 <b>Preview</b> (owner wale buttons sirf aapko dikhte hain) 👇")
+        await q.message.reply_html(text, reply_markup=kb)
+        return
+    context.user_data.pop("op_await", None)
+    if sub == "r":
+        sc.set_text(None)
+        st.log("start_edit", user=q.from_user, detail="text → default", bot="master")
+        await q.answer("♻️ Default text wapas")
+    elif sub == "d":
+        gone = sc.remove_button(int(args[1]))
+        if gone:
+            st.log("start_edit", user=q.from_user, detail=f"button deleted: {gone['text']}", bot="master")
+        await q.answer(f"🗑 {gone['text']} delete" if gone else "Button nahi mila")
+    elif sub == "u":
+        await q.answer("⬆️" if sc.move_button(int(args[1]), -1) else "Sabse upar hai")
+    elif sub == "h":
+        shown = sc.toggle_builtin(args[1])
+        await q.answer("✅ Ab dikhega" if shown else "🚫 Ab chhup gaya")
+    elif sub == "x":
+        if len(args) < 2:
+            await q.answer()
+            kb = InlineKeyboardMarkup([[B("🧹 Haan, sab default karo", callback_data="op:sm:x:y")],
+                                       [B("« Cancel", callback_data="op:sm")]])
+            await _show(q, "⚠️ Text, aapke saare link buttons aur chhupe buttons — sab default ho jayenge. Pakka?", kb)
+            return
+        sc.reset_all()
+        st.log("start_edit", user=q.from_user, detail="reset all", bot="master")
+        await q.answer("🧹 Sab default")
+    else:
+        await q.answer()
+    await _show(q, *start_screen())
+
+
 # ------------------------------------------------------------------ handlers
 async def cmd_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -380,6 +488,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif act == "lg":
             await q.answer()
             await _show(q, *logs_screen(args[0], int(args[1])))
+        elif act == "sm":
+            await _start_cfg(q, context, args)
         else:
             await q.answer()
     except TelegramError as e:
@@ -596,6 +706,45 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scr = clone_detail_screen(aw["bot_id"])
         if scr:
             await msg.reply_html("✅ Owner badal diya.\n\n" + scr[0], reply_markup=scr[1])
+    elif kind == "start_text":
+        if not text:
+            await msg.reply_text("❌ Sirf text bhejiye (photo/sticker nahi), ya /cancel.")
+            raise ApplicationHandlerStop
+        new = msg.text_html
+        if len(new) > sc.MAX_TEXT:
+            await msg.reply_text(f"❌ Text bahut lamba hai ({len(new)}). {sc.MAX_TEXT} characters tak rakhiye.")
+            raise ApplicationHandlerStop
+        old = sc.raw_text() if sc.is_custom_text() else None
+        sc.set_text(new)
+        me = await context.bot.get_me()
+        t, kb = h.start_menu(user.id, me.username, user.first_name or "")
+        try:
+            await msg.reply_html("✅ Text save ho gaya. Users ko aisa dikhega 👇")
+            await msg.reply_html(t, reply_markup=kb)
+        except BadRequest as e:
+            sc.set_text(old)
+            await msg.reply_text(f"❌ Telegram ne ye text accept nahi kiya ({e}). Dobara bhejiye ya /cancel.")
+            raise ApplicationHandlerStop
+        st.log("start_edit", user=user, detail="text changed", bot="master")
+        done = True
+        t, kb = start_screen()
+        await msg.reply_html(t, reply_markup=kb)
+    elif kind == "start_btn":
+        added, bad, full = sc.add_buttons(text)
+        if not added:
+            await msg.reply_html("❌ Samajh nahi aaya. Aise bhejiye:\n<code>Button ka naam - https://t.me/xyz</code>\nYa /cancel.")
+            raise ApplicationHandlerStop
+        for label, _u in added:
+            st.log("start_edit", user=user, detail=f"button added: {label}", bot="master")
+        note = f"✅ {len(added)} button jode gaye."
+        if bad:
+            note += "\n⚠️ Ye lines samajh nahi aayi:\n" + "\n".join(f"• {E(b)}" for b in bad[:10])
+        if full:
+            note += f"\n⚠️ Maximum {sc.MAX_BUTTONS} buttons ho gaye, baaki nahi jode."
+        done = True
+        await msg.reply_html(note)
+        t, kb = start_screen()
+        await msg.reply_html(t, reply_markup=kb)
     if done:
         context.user_data.pop("op_await", None)
     raise ApplicationHandlerStop
