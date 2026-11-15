@@ -37,6 +37,16 @@ async def _seed_groups(app: Application) -> None:
 
 
 async def post_init(app: Application):
+    me = app.bot
+    log.info("✅ Token is bot ka hai: @%s (%s, id=%s) — Telegram me isi bot ko message kijiye",
+             me.username, me.first_name, me.id)
+    try:
+        wh = await app.bot.get_webhook_info()
+        if wh.url:
+            log.warning("⚠️ Is token par webhook laga tha (%s) — hata raha hoon, warna polling ko messages nahi milte",
+                        wh.url)
+    except Exception as e:
+        log.warning("webhook info nahi mili: %s", e)
     await hub.setup(app)
     await wiring.set_commands(app, master=True)
     cloner.init(app)

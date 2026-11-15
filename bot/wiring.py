@@ -29,9 +29,27 @@ from . import store as st
 from .config import OWNER_IDS
 
 
+import logging
+
+log = logging.getLogger(__name__)
+
+
+def type_of(update: Update) -> str:
+    for k in ("my_chat_member", "chat_member", "chat_join_request", "message", "edited_message", "channel_post"):
+        if getattr(update, k, None):
+            return k
+    return "other"
+
+
 async def _track_update(update: Update, context) -> None:
     """group=-11: kis bot par update aaya + users record + request counter. Kuch block nahi karta."""
     st.current_bot.set("clone:@" + (context.bot.username or "") if context.bot_data.get("is_clone") else "master")
+    if not context.bot_data.get("is_clone"):
+        msg = update.effective_message
+        what = "button" if update.callback_query else ((msg.text or "")[:30] if msg and msg.text else type_of(update))
+        chat = update.effective_chat
+        log.info("📩 Update mila: %s · user=%s · chat=%s", what,
+                 update.effective_user.id if update.effective_user else "-", chat.type if chat else "-")
     s = st.get()
     if s is None:
         return
