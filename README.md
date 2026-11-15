@@ -143,3 +143,9 @@ String sirf us chat me milti hai — bot kuch save nahi karta, environment me ku
 Bot ke private chat me `/start` → **♻️ Revoke Session String** (ya `/revoke`).
 Purani string paste kijiye (Telethon / mtcute / Kurigram / GramJS / GoTG — library apne aap pehchani jaati hai) → **🗑 Haan, revoke karo**.
 Bot Telegram par us string ka logout kar deta hai, string hamesha ke liye band ho jaati hai, aur wahin library buttons aate hain taaki turant **nayi string** le sakein.
+
+## 🩺 Bot jawab nahi de raha? (Render)
+1. **Render free service so jaati hai** (15 min koi request nahi) → bot band. Ab bot khud har 10 min apna URL ping karta hai (`RENDER_EXTERNAL_URL` Render apne aap deta hai). Logs me `Keepalive: ...` line dikhni chahiye. Service type **Web Service** hi rakhein.
+2. **Logs me `❌ Conflict ... min se chal raha hai`** → isi token se koi doosra bot chal raha hai (doosri Render service, Replit, PC). Use band kijiye, ya BotFather → `/revoke` se naya token lekar sirf Render me `BOT_TOKEN` badliye. Deploy ke turant baad 1–2 conflict normal hain.
+3. **`Owner IDs loaded: 0`** → Render → Environment me `OWNER_IDS` = apni Telegram ID (bot me `/id` bhejkar dekhein). Iske bina owner panel / `/sessions` nahi chalega.
+4. Free Render ki disk har deploy/restart par saaf hoti hai — `bot.db` (settings, clones) reset ho jaata hai. `SESSION_SECRET` env me zaroor daaliye.

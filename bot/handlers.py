@@ -800,10 +800,27 @@ async def on_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.remember_chat(cmu.chat.id, cmu.chat.title)
 
 
+_conflict = {"first": 0.0, "last_log": 0.0, "count": 0}
+
+
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     from telegram.error import Conflict
     if isinstance(context.error, Conflict):
-        log.warning("⚠️ Conflict: isi BOT_TOKEN se koi doosra bot bhi chal raha hai (purana deploy, doosri Render "
-                    "service, Replit/PC). Sirf ek jagah chalaiye, warna messages doosre bot ko chale jaayenge.")
+        now = time.time()
+        c = _conflict
+        if now - c["last_log"] > 300:  # 5 min se koi conflict nahi tha — naya silsila
+            c["first"], c["count"] = now, 0
+        c["count"] += 1
+        if c["count"] == 1 or now - c["last_log"] > 60:
+            secs = int(now - c["first"])
+            if secs < 90:
+                # Render deploy ke time purana instance thodi der chalta hai — ye normal hai
+                log.warning("⚠️ Conflict (%ds): purana deploy abhi band ho raha hoga — thoda ruko.", secs)
+            else:
+                log.error("❌ Conflict %d min se chal raha hai (%d baar): isi BOT_TOKEN se KOI DOOSRA bot "
+                          "chal raha hai (doosri Render service, Replit, PC, Railway/Heroku). Use band kijiye "
+                          "ya BotFather → /revoke se naya token lekar sirf yahan daaliye. Tab tak messages "
+                          "doosre bot ko ja rahe hain.", secs // 60, c["count"])
+        c["last_log"] = now
         return
     log.error("Unhandled error", exc_info=context.error)
