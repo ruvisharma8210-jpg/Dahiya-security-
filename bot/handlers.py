@@ -801,4 +801,9 @@ async def on_my_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    from telegram.error import Conflict
+    if isinstance(context.error, Conflict):
+        log.warning("⚠️ Conflict: isi BOT_TOKEN se koi doosra bot bhi chal raha hai (purana deploy, doosri Render "
+                    "service, Replit/PC). Sirf ek jagah chalaiye, warna messages doosre bot ko chale jaayenge.")
+        return
     log.error("Unhandled error", exc_info=context.error)

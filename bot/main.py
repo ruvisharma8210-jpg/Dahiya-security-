@@ -67,7 +67,8 @@ def main():
 
     keepalive.start()
     logging.info("Bot starting…")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    # drop_pending_updates=False: deploy ke dauraan bheje gaye commands ka bhi jawab milega
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
 
 
 if __name__ == "__main__":
