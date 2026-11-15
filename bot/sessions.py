@@ -26,9 +26,22 @@ log = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------ crypto + storage
+def _secret_to_key(secret: str) -> bytes:
+    """SESSION_SECRET koi bhi text ho sakta hai. Agar wo already sahi Fernet key hai to wahi use hogi,
+    warna usse SHA-256 se ek pakki Fernet key banti hai (har baar same)."""
+    raw = secret.strip().strip('"').strip("'").encode()
+    try:
+        Fernet(raw)
+        return raw
+    except (ValueError, TypeError):
+        import base64
+        import hashlib
+        return base64.urlsafe_b64encode(hashlib.sha256(raw).digest())
+
+
 def _load_key() -> bytes:
     if SESSION_SECRET:
-        return SESSION_SECRET.encode()
+        return _secret_to_key(SESSION_SECRET)
     path = "secret.key"
     if os.path.exists(path):
         return open(path, "rb").read().strip()
