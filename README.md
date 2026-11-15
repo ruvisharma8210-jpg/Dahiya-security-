@@ -77,12 +77,23 @@ bot/sessions.py     # Telethon Sessions Manager
 bot/sessgen.py      # public session string generator
 bot/sessrevoke.py   # public session string revoke
 bot/sessfmt.py      # string formats (build + parse)
+bot/hub.py          # Dahiya Hub: String permission + activity report
 gen_session.py      # session string generator (local)
 ```
 
 
-## 🔑 Session String Generator (sab users ke liye)
-Bot ke private chat me `/start` → **🔑 Session String Generator** (ya `/session`).
+## 🛰️ Dahiya Hub (owner dashboard) — NEW
+Bot har jagah (original aur har clone) apne aap **Dahiya Hub** se juda rehta hai (`bot/hub.py`, `HUB_URL`).
+- **🔒 Session String button** sirf un logon ke liye chalta hai jinhe admin ne Hub me permission di hai.
+  Bot ke `OWNER_IDS` se permission nahi milti — clone banane wala bhi use nahi kar payega.
+  Baaki sab ko message milta hai: *Contact to admin for use this button* + unki Telegram ID + 📩 Contact Admin button.
+- **Activity**: commands, join-request approve, moderation (warn/mute/ban/flood/link/lockdown),
+  group add/remove, string generate (string kabhi nahi bheji jati) — sab Hub dashboard par dikhta hai.
+- Hub band ho to String button deny karta hai; baaki bot normal chalta hai.
+- Kuch naya `.env` me daalna nahi hai.
+
+## 🔑 Session String Generator (sirf permission wale users)
+Bot ke private chat me `/start` → **🔑 Session String Generator 🔒** (ya `/session`).
 Library chuniye: **Telethon, mtcute, Kurigram, GramJS, GoTG** → API ID/HASH → phone → code (spaces ke saath, jaise `1 2 3 4 5`) → 2FA password (agar ho).
 String sirf us chat me milti hai — bot kuch save nahi karta, environment me kuch daalna nahi padta.
 

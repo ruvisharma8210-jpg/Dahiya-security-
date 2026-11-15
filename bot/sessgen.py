@@ -29,7 +29,7 @@ from telethon.errors import (
 )
 from telethon.sessions import StringSession
 
-from . import sessfmt
+from . import hub, sessfmt
 from .config import API_HASH, API_ID
 
 log = logging.getLogger(__name__)
@@ -100,10 +100,29 @@ def _guard(update: Update) -> str | None:
     return None
 
 
+async def _allowed(update: Update, context) -> bool:
+    """Hub se permission check. Sirf admin + admin ke diye users. Baaki ko 'Contact admin'."""
+    user = update.effective_user
+    res = await hub.check_access(context.bot, user)
+    if res.get("allowed"):
+        return True
+    q = update.callback_query
+    if q:
+        try:
+            await q.answer("⛔ Contact to admin for use this button", show_alert=True)
+        except TelegramError:
+            pass
+    text, kb = hub.denied_panel(res, user)
+    await update.effective_message.reply_html(text, reply_markup=kb, disable_web_page_preview=True)
+    return False
+
+
 async def cmd_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reason = _guard(update)
     if reason:
         await update.effective_message.reply_text(reason)
+        return
+    if not await _allowed(update, context):
         return
     await _cleanup(context)
     text, kb = home_panel()
@@ -149,6 +168,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     parts = q.data.split(":")
     action = parts[1]
+    if action in ("home", "lib", "defapi", "ownapi") and not await _allowed(update, context):
+        await _cleanup(context)
+        return
 
     if action == "home":
         await _cleanup(context)
@@ -172,7 +194,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.answer()
             return
         await _cleanup(context)
-        st = {"lib": lib, "step": "api", "ts": time.time()}
+        st = {"lib": lib, "step": "api", "ts": time.time(), "user": q.from_user}
         context.user_data[KEY] = st
         st["timer"] = asyncio.create_task(_expire(context, st, q.message.chat.id))
         await q.answer()
@@ -354,6 +376,7 @@ async def _finish(context, st: dict, chat_id: int):
         await context.bot.send_message(chat_id, f"❌ String banane me error ({type(e).__name__}). /session se dobara try karein.")
         return
     await _cleanup(context, st)  # sirf disconnect — logout nahi
+    hub.track("session_generated", user=st.get("user"), detail=sessfmt.LIBS.get(lib, lib))  # string kabhi nahi bheji jati
     name = html.escape(" ".join(x for x in (me.first_name, me.last_name) if x) or str(me.id))
     usage = html.escape(sessfmt.USAGE[lib])
     extra = ""

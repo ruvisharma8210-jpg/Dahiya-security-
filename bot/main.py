@@ -19,12 +19,14 @@ from . import sessions as ss
 from .config import API_HASH, API_ID, BOT_TOKEN, DB_PATH, OWNER_IDS
 from .db import DB
 from . import keepalive
+from . import hub
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def post_init(app: Application):
+    await hub.setup(app)
     await app.bot.set_my_commands([
         BotCommand("panel", "Full control panel"),
         BotCommand("welcome", "Welcome message settings"),
@@ -67,6 +69,9 @@ def main():
     app.bot_data["db"] = DB(DB_PATH)
     app.bot_data["sessions"] = ss.SessionStore(DB_PATH)
 
+    # Hub activity report — sabse pehle (group -10), kisi handler ko rokta nahi
+    app.add_handler(MessageHandler(filters.COMMAND, hub.on_any_command), group=-10)
+    app.add_handler(ChatMemberHandler(hub.on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER), group=-10)
     app.add_handler(CommandHandler("start", h.cmd_start))
     app.add_handler(CommandHandler(["help", "menu"], h.cmd_start))
     app.add_handler(CommandHandler("id", h.cmd_id))

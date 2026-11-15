@@ -18,6 +18,7 @@ from telegram.constants import ChatType, MessageEntityType, ParseMode
 from telegram.error import BadRequest, Forbidden, TelegramError
 from telegram.ext import ApplicationHandlerStop, ContextTypes
 
+from . import hub
 from .db import DEFAULT_APPROVE_DM, DEFAULT_WELCOME, DB
 from .panels import build, final_label
 from .utils import (
@@ -73,7 +74,7 @@ def start_menu(user_id: int, bot_username: str):
         "Neeche buttons se sab kuch kijiye:\n"
         "• <b>➕ Add to Group</b> — mujhe group me add karke admin banaiye\n"
         "• <b>⚙️ Group Settings</b> — Welcome, Auto-Approve, Security sab yahin se\n"
-        "• <b>🔑 Session String</b> — apni Telethon / mtcute / Kurigram / GramJS / GoTG string nikaalein\n"
+        "• <b>🔑 Session String</b> 🔒 — sirf admin ki permission wale users ke liye\n"
         "• <b>♻️ Revoke</b> — purani string band karke nayi lijiye\n\n"
         f"Aapki Telegram ID: <code>{user_id}</code>"
     )
@@ -82,7 +83,7 @@ def start_menu(user_id: int, bot_username: str):
         [InlineKeyboardButton("⚙️ Group Settings", callback_data="g:list:main")],
         [InlineKeyboardButton("👋 Welcome Message", callback_data="g:list:welcome"),
          InlineKeyboardButton("✅ Auto-Approve", callback_data="g:list:approve")],
-        [InlineKeyboardButton("🔑 Session String Generator", callback_data="sg:home")],
+        [InlineKeyboardButton("🔑 Session String Generator 🔒", callback_data="sg:home")],
         [InlineKeyboardButton("♻️ Revoke Session String", callback_data="sr:start")],
     ]
     if user_id in OWNER_IDS:
@@ -200,7 +201,12 @@ async def set_lockdown(context, chat_id: int, on: bool) -> bool:
         log.warning("lockdown failed: %s", e)
         return False
     db.set(chat_id, "lockdown", on)
+    hub.track("moderation", chat=_ChatRef(chat_id, db_title(db, chat_id)), detail="lockdown ON" if on else "lockdown OFF")
     return True
+
+
+def db_title(db, chat_id: int) -> str:
+    return next((t for c, t in db.chats() if c == chat_id), "")
 
 
 async def cmd_lockdown(update: Update, context):
@@ -277,8 +283,10 @@ async def warn_user(context, chat, user, reason: str):
     if count >= limit:
         db.reset_warns(chat.id, user.id)
         label = await apply_final(context, chat, user, s)
+        hub.track("moderation", chat=chat, user=user, detail=f"{label} ({reason})")
         text = f"🚫 {mention(user)} ne {limit}/{limit} warnings poori kar li — <b>{label}</b>.\nReason: {html.escape(reason)}"
     else:
+        hub.track("moderation", chat=chat, user=user, detail=f"warn {count}/{limit} ({reason})")
         text = f"⚠️ {mention(user)} warning <b>{count}/{limit}</b>\nReason: {html.escape(reason)}"
     try:
         await context.bot.send_message(chat.id, text, parse_mode=ParseMode.HTML)
@@ -636,6 +644,7 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 secs = int(fl["action"][1:])
                 await mute(context.bot, chat.id, user.id, secs)
                 label = f"muted {fmt_dur(secs)}"
+            hub.track("moderation", chat=chat, user=user, detail=f"flood: {label}")
             await context.bot.send_message(
                 chat.id, f"🌊 {mention(user)} flooding ke liye <b>{label}</b>.", parse_mode=ParseMode.HTML)
             return
@@ -652,6 +661,8 @@ async def moderate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if any(not is_allowed(u, allowed) for u in urls):
             await safe_delete(msg)
             action = al["action"]
+            if action != "warn":
+                hub.track("moderation", chat=chat, user=user, detail=f"link: {action}")
             if action == "warn":
                 await warn_user(context, chat, user, "link bhejna allowed nahi")
             elif action == "mute":
@@ -702,6 +713,7 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if (s["antileft"]["on"] and left_self and joined_at
                 and time.time() - joined_at <= s["antileft"]["window"]):
             if await ban(context.bot, chat.id, user.id, 0):
+                hub.track("moderation", chat=chat, user=user, detail="anti-left ban")
                 await context.bot.send_message(
                     chat.id, f"🚪 {mention(user)} join karke turant left — <b>auto-banned</b>.",
                     parse_mode=ParseMode.HTML)
@@ -744,6 +756,7 @@ async def _approve(context, req, s):
         return
     db = db_of(context)
     db.set(req.chat.id, "approve_count", int(db.get(req.chat.id).get("approve_count") or 0) + 1)
+    hub.track("join_approved", chat=req.chat, user=req.from_user)
     if s.get("approve_dm"):
         try:
             await context.bot.send_message(req.user_chat_id or req.from_user.id,
